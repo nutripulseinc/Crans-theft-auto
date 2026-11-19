@@ -540,7 +540,24 @@ function drawUI(){u.setTransform(UDPR,0,0,UDPR,0,0);u.clearRect(0,0,W,H);
 }
 
 let last=performance.now(),playing=false;
-let orthoT=0;function frame(t){const dt=Math.min(.05,Math.max(0,(t-last)/1000));last=t;time+=dt;orthoT-=dt;if(orthoDirty&&orthoT<=0){orthoT=.6;orthoDirty=false;orthoTex.needsUpdate=true;}if(playing)update(dt);sync(dt);renderer.render(scene,camera);if(playing)drawUI();requestAnimationFrame(frame)}
+// ================= high-resolution swisstopo photo streamed around the player =================
+const HZo=19,HN=2**HZo,HR=LOW?95:140;
+const hTiles=new Map();let hLoading=0,hActive=false;const texLoader=new THREE.TextureLoader();texLoader.setCrossOrigin('anonymous');
+const lon2tx=lon=>(lon+180)/360*HN,lat2ty=lat=>{const r=lat*Math.PI/180;return(1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*HN};
+const tx2lon=tx=>tx/HN*360-180,ty2lat=ty=>{const n=Math.PI-2*Math.PI*ty/HN;return 180/Math.PI*Math.atan(.5*(Math.exp(n)-Math.exp(-n)))};
+const hMat=t=>{const m=new THREE.MeshLambertMaterial({map:t,color:'#d6d6d6',polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-1});return m};
+function hTile(tx,ty){const key=tx+'/'+ty;if(hTiles.has(key))return;const rec={mesh:null};hTiles.set(key,rec);hLoading++;
+  texLoader.load(`https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissimage/default/current/3857/${HZo}/${tx}/${ty}.jpeg`,t=>{hLoading--;if(!hTiles.has(key)){t.dispose();return}
+    t.anisotropy=8;const G=10,pos=[],uv=[],idx=[];for(let j=0;j<=G;j++)for(let i=0;i<=G;i++){const lon=tx2lon(tx+i/G),lat=ty2lat(ty+j/G);const x=(lon-LON0)*KXo,z=-(lat-LAT0)*KZo;pos.push(x,hf(x,z)+.07,z);uv.push(i/G,1-j/G)}
+    for(let j=0;j<G;j++)for(let i=0;i<G;i++){const a=j*(G+1)+i,b=a+1,c=a+G+1,d=c+1;idx.push(a,c,b,b,c,d)}
+    const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));g.setIndex(idx);g.computeVertexNormals();
+    const m=new THREE.Mesh(g,hMat(t));m.receiveShadow=true;scene.add(m);rec.mesh=m;if(!hActive){hActive=true;roadLayer.visible=false}},undefined,()=>{hLoading--;rec.failed=true})}
+let hT=0;
+function hiresUpdate(dt){hT-=dt;if(hT>0)return;hT=.4;const p=pos();const lon=LON0+p.x/KXo,lat=LAT0-p.z/KZo;const cx=lon2tx(lon),cy=lat2ty(lat);const tsz=40075016*Math.cos(LAT0*Math.PI/180)/HN;const rt=HR/tsz;
+  const want=[];for(let ty=Math.floor(cy-rt);ty<=Math.floor(cy+rt);ty++)for(let tx=Math.floor(cx-rt);tx<=Math.floor(cx+rt);tx++){const d=Math.hypot(tx+.5-cx,ty+.5-cy);if(d<=rt+.7)want.push([d,tx,ty])}
+  want.sort((a,b)=>a[0]-b[0]);for(const [d,tx,ty] of want){if(hLoading>=6)break;hTile(tx,ty)}
+  for(const [key,rec] of hTiles){const [tx,ty]=key.split('/').map(Number);if(Math.hypot(tx+.5-cx,ty+.5-cy)>rt*1.7+1){if(rec.mesh){scene.remove(rec.mesh);rec.mesh.geometry.dispose();rec.mesh.material.map.dispose();rec.mesh.material.dispose()}hTiles.delete(key)}}}
+let orthoT=0;function frame(t){const dt=Math.min(.05,Math.max(0,(t-last)/1000));last=t;time+=dt;orthoT-=dt;if(orthoDirty&&orthoT<=0){orthoT=.6;orthoDirty=false;orthoTex.needsUpdate=true;}if(playing){update(dt);hiresUpdate(dt)}sync(dt);renderer.render(scene,camera);if(playing)drawUI();requestAnimationFrame(frame)}
 camera.position.set(player.x-8,hf(player.x,player.z)+6,player.z-8);
 requestAnimationFrame(frame);
 const go=document.getElementById('go');go.disabled=false;go.textContent='JOUER';
