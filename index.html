@@ -126,7 +126,14 @@ const POI=D.poi.filter(p=>Math.abs(p[1])<D.hx&&Math.abs(p[2])<D.hz);const poi=n=
 const ray=new THREE.Raycaster();ray.firstHitOnly=false;const DOWN=new THREE.Vector3(0,-1,0),tmpV=new THREE.Vector3();
 function groundHit(x,z,fromY,depth=60,near=null){tmpV.set(x,fromY,z);ray.set(tmpV,DOWN);ray.far=depth;const h=ray.intersectObject(tiles.group,true);if(!h.length)return null;
   if(near===null)return h[0].point.y;let best=null,bd=1e9;for(const it of h){const d=Math.abs(it.point.y-near);if(d<bd){bd=d;best=it.point.y}}return best}
-function refineGeo(x,z){const m=modelY(x,z);if(inLake(x,z))return null;const g=groundHit(x,z,m+40,90,m);if(g===null)return null;const est=g-elevAbs(x,z);if(Math.abs(est-49.6)<10){GEO+=(est-GEO)*.08;return g}return null}
+function refineGeo(x,z){if(inLake(x,z))return null;const m=modelY(x,z);const g=groundHit(x,z,m+30,60,m);if(g===null||Math.abs(g-m)>6)return null;GEO+=(g-m)*.08;return g}
+let diag='';
+function calibrate(x,z){const ests=[];let raw=0;for(let i=-1;i<=1;i++)for(let j=-1;j<=1;j++){const px=x+i*15,pz=z+j*15;if(inLake(px,pz))continue;
+    tmpV.set(px,elevAbs(px,pz)+500,pz);ray.set(tmpV,DOWN);ray.far=1200;const h=ray.intersectObject(tiles.group,true);raw+=h.length;for(const it of h)ests.push(it.point.y-elevAbs(px,pz))}
+  const bins=new Map();for(const e of ests){const b=Math.round(e/3);bins.set(b,(bins.get(b)||0)+1)}
+  let best=null,bc=0;for(const [b,c] of bins){if(c>bc||(c===bc&&b<best)){bc=c;best=b}}
+  diag=`mesures: ${raw} · écart: ${best===null?'?':(best*3).toFixed(0)} m (${bc})`;
+  if(best===null||bc<4)return null;const sel=ests.filter(e=>Math.abs(e/3-best)<=1.2);return sel.reduce((a,b)=>a+b,0)/sel.length}
 
 // ---------- entities ----------
 const Lm=c=>new THREE.MeshLambertMaterial({color:c});
@@ -177,7 +184,7 @@ function toggleCar(){if(player.car){const c=player.car;for(const s of[-1,1]){con
 const angDiff=(a,b)=>((a-b+Math.PI*3)%(Math.PI*2))-Math.PI;
 
 // ---------- update ----------
-let calibrated=false,rr=0,whereT=0,where='';
+let calT=0,calibrated=false,rr=0,whereT=0,where='';
 function settle(o,dt){ // vertical position on the real model
   const g=groundHit(o.x,o.z,o.y+1.2,6,o.y);
   if(g!==null&&g<=o.y+1.2){if(g>=o.y-.08){o.y+=(g-o.y)*Math.min(1,dt*20);o.vy=0;o.grounded=true}else{o.vy-=9.8*dt;o.y=Math.max(g,o.y+o.vy*dt);if(o.y===g){o.vy=0;o.grounded=true}}}
@@ -185,7 +192,7 @@ function settle(o,dt){ // vertical position on the real model
   if(o.y>modelY(o.x,o.z)+25){o.y=modelY(o.x,o.z);o.vy=0}}
 let geoT=0;
 function update(dt){
-  if(!calibrated){let ok=null;for(let k=0;k<4;k++)ok=refineGeo(player.x,player.z)??ok;if(ok!==null){player.y=ok;player.grounded=true;calibrated=true;for(const c of cars)c.y=modelY(c.x,c.z);for(const b of bottles)b.y=modelY(b.x,b.z);document.getElementById('load').style.display='none';say('Bienvenue à Crans ! 🇨🇭')}else return}
+  if(!calibrated){calT-=dt;const gg=calT<=0?calibrate(player.x,player.z):null;if(calT<=0)calT=.5;if(gg!==null){GEO=gg;const m=modelY(player.x,player.z);player.y=groundHit(player.x,player.z,m+3,10,m)??m;player.grounded=true;calibrated=true;for(const c of cars)c.y=modelY(c.x,c.z);for(const b of bottles)b.y=modelY(b.x,b.z);document.getElementById('load').style.display='none';say('Bienvenue à Crans ! 🇨🇭')}else return}
   geoT-=dt;if(geoT<=0){geoT=.25;const p=pos();refineGeo(p.x+(Math.random()-.5)*30,p.z+(Math.random()-.5)*30)}
   const [ix,iy]=input();
   if(player.car){const c=player.car,thr=-iy;if(thr>0)c.v+=(c.v<0?16:7)*thr*dt;else if(thr<0)c.v+=(c.v>0?16:5)*thr*dt;else c.v*=1-.9*dt;
@@ -231,7 +238,7 @@ const load=document.getElementById('load');load.style.display='flex';load.textCo
 const t0=performance.now();let last=t0,attrT=0;
 camera.position.set(player.x-60,player.y+80,player.z-60);camera.lookAt(player.x,player.y,player.z);
 function frame(t){const dt=Math.min(.05,Math.max(0,(t-last)/1000));last=t;
-  if(!calibrated&&t-t0>25000)load.textContent='Ça ne charge pas ? Vérifie ta clé Google et ta connexion.';
+  if(!calibrated&&t-t0>8000)load.textContent='Recherche du sol… '+diag;if(!calibrated&&t-t0>40000)load.textContent='Le sol est introuvable ('+diag+'). Envoie une capture à Claude.';
   update(dt);sync(dt);camera.updateMatrixWorld();tiles.update();renderer.render(scene,camera);drawUI();
   attrT-=dt;if(attrT<=0&&tiles.getAttributions){attrT=2;try{const at=tiles.getAttributions().map(a=>a.value).filter(v=>typeof v==='string').join(' ');if(at)document.getElementById('gattr').textContent=at}catch(e){}}
   requestAnimationFrame(frame)}
