@@ -11,7 +11,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:#9fcff0;touch-action:n
 #hud{position:fixed;top:10px;left:12px;color:#fff;font-weight:900;text-shadow:0 1px 4px #000;font-size:16px;pointer-events:none;line-height:1.45;z-index:3}
 #msg{position:fixed;top:26%;left:0;right:0;text-align:center;color:#fff;font-size:22px;font-weight:900;text-shadow:0 2px 6px #000;pointer-events:none;opacity:0;transition:opacity .4s;padding:0 20px;z-index:3}
 .btn{position:fixed;right:22px;width:72px;height:72px;border-radius:50%;background:rgba(0,0,0,.28);border:2px solid rgba(255,255,255,.75);color:#fff;font-size:30px;display:flex;align-items:center;justify-content:center;touch-action:none;z-index:4}
-#bCar{bottom:34px}#bHorn{bottom:122px;width:56px;height:56px;font-size:24px;right:30px}
+#bCar{bottom:34px}#bHorn{bottom:122px;width:56px;height:56px;font-size:24px;right:30px}#bQ{bottom:192px;width:48px;height:48px;font-size:15px;font-weight:900;right:34px}
 #start{position:fixed;inset:0;background:radial-gradient(circle at 50% 30%,#1d3b66ee,#0a1222f8);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:20px;z-index:10}
 #start h1{font-size:44px;margin:0 0 4px;letter-spacing:3px;font-weight:900;color:#f5c518;text-shadow:3px 3px 0 #b3261e}
 #start p{max-width:380px;line-height:1.5;font-size:15px;margin:6px}
@@ -34,7 +34,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:#9fcff0;touch-action:n
 <body>
 <canvas id="ui"></canvas>
 <div id="hud"></div><div id="msg"></div><div id="load"></div>
-<div class="btn" id="bHorn">📯</div><div class="btn" id="bCar">🚗</div>
+<div class="btn" id="bHorn">📯</div><div class="btn" id="bQ">SD</div><div class="btn" id="bCar">🚗</div>
 <div id="credit"><span id="glogo">Google</span> · <span id="gattr">Données cartographiques ©Google</span> · Routes © OpenStreetMap</div>
 <div id="err"></div>
 <div id="start">
@@ -90,9 +90,12 @@ tiles.registerPlugin(new P.GoogleCloudAuthPlugin({apiToken:KEY,autoRefreshToken:
 if(P.TileCompressionPlugin)tiles.registerPlugin(new P.TileCompressionPlugin());
 if(P.UnloadTilesPlugin)tiles.registerPlugin(new P.UnloadTilesPlugin());
 if(P.GLTFExtensionsPlugin)tiles.registerPlugin(new P.GLTFExtensionsPlugin({dracoLoader:new DRACOLoader().setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.7/')}));
-tiles.errorTarget=MOBILE?10:4;
+let HQ=false;try{HQ=localStorage.getItem('hq')==='1'}catch(e){}
+const setQ=()=>{tiles.errorTarget=HQ?(MOBILE?3:2):(MOBILE?8:4);camera.far=HQ?6000:2500;camera.updateProjectionMatrix();scene.fog.far=camera.far;scene.fog.near=camera.far*.35;document.getElementById('bQ').textContent=HQ?'HD':'SD'};
 tiles.group.matrixAutoUpdate=false;tiles.group.matrix.copy(ecef2local);tiles.group.matrixWorldNeedsUpdate=true;
-tiles.setCamera(camera);tiles.setResolutionFromRenderer(camera,renderer);
+tiles.setCamera(camera);tiles.setResolutionFromRenderer(camera,renderer);setQ();
+document.getElementById('bQ').onpointerdown=e=>{e.preventDefault();HQ=!HQ;try{localStorage.setItem('hq',HQ?'1':'0')}catch(_){}setQ();say(HQ?'Qualité HD : plus net, plus lent':'Qualité SD : plus fluide')};
+if(tiles.lruCache){tiles.lruCache.minSize=MOBILE?600:900;tiles.lruCache.maxSize=MOBILE?900:1400}
 tiles.addEventListener('load-model',({scene:s})=>{s.traverse(o=>{if(o.material){const m=o.material;o.material=new THREE.MeshBasicMaterial({map:m.map||null,color:m.map?0xffffff:(m.color||0xffffff)});m.dispose&&m.dispose()}})});
 tiles.addEventListener('load-error',e=>{const msg=String(e.error&&e.error.message||e.error||'');if(/403|401|API key|PERMISSION/i.test(msg))showErr('Google refuse la clé : vérifie que « Map Tiles API » est activée et que la facturation est configurée.')});
 scene.add(tiles.group);
@@ -123,13 +126,13 @@ function nearestNode(x,z,maxC=5){let best=0,bd=1e18;for(const e of E){if(e.c>max
 const POI=D.poi.filter(p=>Math.abs(p[1])<D.hx&&Math.abs(p[2])<D.hz);const poi=n=>{const p=POI.find(q=>q[0]===n);return p?[p[1],p[2]]:null};
 
 // ---------- ground via raycast on the real 3D model ----------
-const ray=new THREE.Raycaster();ray.firstHitOnly=false;const DOWN=new THREE.Vector3(0,-1,0),tmpV=new THREE.Vector3();
-function groundHit(x,z,fromY,depth=60,near=null){tmpV.set(x,fromY,z);ray.set(tmpV,DOWN);ray.far=depth;const h=ray.intersectObject(tiles.group,true);if(!h.length)return null;
+const ray=new THREE.Raycaster();ray.firstHitOnly=true;const DOWN=new THREE.Vector3(0,-1,0),tmpV=new THREE.Vector3();
+function groundHit(x,z,fromY,depth=60,near=null){tmpV.set(x,fromY,z);ray.set(tmpV,DOWN);ray.far=depth;ray.firstHitOnly=near===null;const h=ray.intersectObject(tiles.group,true);ray.firstHitOnly=true;if(!h.length)return null;
   if(near===null)return h[0].point.y;let best=null,bd=1e9;for(const it of h){const d=Math.abs(it.point.y-near);if(d<bd){bd=d;best=it.point.y}}return best}
 function refineGeo(x,z){if(inLake(x,z))return null;const m=modelY(x,z);const g=groundHit(x,z,m+30,60,m);if(g===null||Math.abs(g-m)>6)return null;GEO+=(g-m)*.08;return g}
 let diag='';
 function calibrate(x,z){const ests=[];let raw=0;for(let i=-1;i<=1;i++)for(let j=-1;j<=1;j++){const px=x+i*15,pz=z+j*15;if(inLake(px,pz))continue;
-    tmpV.set(px,elevAbs(px,pz)+500,pz);ray.set(tmpV,DOWN);ray.far=1200;const h=ray.intersectObject(tiles.group,true);raw+=h.length;for(const it of h)ests.push(it.point.y-elevAbs(px,pz))}
+    tmpV.set(px,elevAbs(px,pz)+500,pz);ray.set(tmpV,DOWN);ray.far=1200;ray.firstHitOnly=false;const h=ray.intersectObject(tiles.group,true);ray.firstHitOnly=true;raw+=h.length;for(const it of h)ests.push(it.point.y-elevAbs(px,pz))}
   const bins=new Map();for(const e of ests){const b=Math.round(e/3);bins.set(b,(bins.get(b)||0)+1)}
   let best=null,bc=0;for(const [b,c] of bins){if(c>bc||(c===bc&&b<best)){bc=c;best=b}}
   diag=`mesures: ${raw} · écart: ${best===null?'?':(best*3).toFixed(0)} m (${bc})`;
@@ -185,15 +188,16 @@ const angDiff=(a,b)=>((a-b+Math.PI*3)%(Math.PI*2))-Math.PI;
 
 // ---------- update ----------
 let calT=0,calibrated=false,rr=0,whereT=0,where='';
-function settle(o,dt){ // vertical position on the real model
-  const g=groundHit(o.x,o.z,o.y+1.2,6,o.y);
-  if(g!==null&&g<=o.y+1.2){if(g>=o.y-.08){o.y+=(g-o.y)*Math.min(1,dt*20);o.vy=0;o.grounded=true}else{o.vy-=9.8*dt;o.y=Math.max(g,o.y+o.vy*dt);if(o.y===g){o.vy=0;o.grounded=true}}}
+let frameN=0;
+function settle(o,dt){ // vertical position on the real model (probe every 3rd frame)
+  if((frameN+(o.ph||0))%3===0){o.gh=groundHit(o.x,o.z,o.y+1.2,6)}const g=o.gh??null;
+  if(g!==null&&g<=o.y+1.25){if(g>=o.y-.08){o.y+=(g-o.y)*Math.min(1,dt*20);o.vy=0;o.grounded=true}else{o.vy-=9.8*dt;o.y=Math.max(g,o.y+o.vy*dt);if(o.y===g){o.vy=0;o.grounded=true}}}
   else{const m=modelY(o.x,o.z);if(o.y>m+.2){o.vy-=9.8*dt;o.y+=o.vy*dt;if(o.y<m){o.y=m;o.vy=0}}else{o.y+=(m-o.y)*Math.min(1,dt*6);o.vy=0}}
   if(o.y>modelY(o.x,o.z)+25){o.y=modelY(o.x,o.z);o.vy=0}}
 let geoT=0;
 function update(dt){
   if(!calibrated){calT-=dt;const gg=calT<=0?calibrate(player.x,player.z):null;if(calT<=0)calT=.5;if(gg!==null){GEO=gg;const m=modelY(player.x,player.z);player.y=groundHit(player.x,player.z,m+3,10,m)??m;player.grounded=true;calibrated=true;for(const c of cars)c.y=modelY(c.x,c.z);for(const b of bottles)b.y=modelY(b.x,b.z);document.getElementById('load').style.display='none';say('Bienvenue à Crans ! 🇨🇭')}else return}
-  geoT-=dt;if(geoT<=0){geoT=.25;const p=pos();refineGeo(p.x+(Math.random()-.5)*30,p.z+(Math.random()-.5)*30)}
+  frameN++;geoT-=dt;if(geoT<=0){geoT=1.5;const p=pos();refineGeo(p.x+(Math.random()-.5)*30,p.z+(Math.random()-.5)*30)}
   const [ix,iy]=input();
   if(player.car){const c=player.car,thr=-iy;if(thr>0)c.v+=(c.v<0?16:7)*thr*dt;else if(thr<0)c.v+=(c.v>0?16:5)*thr*dt;else c.v*=1-.9*dt;
     const max=roadAt(c.x,c.z)?33:13;if(c.v>max)c.v-=Math.min(c.v-max,10*dt);c.v=Math.max(c.v,-6);c.a+=ix*1.6*dt*clamp(c.v/5,-1,1);
@@ -201,7 +205,7 @@ function update(dt){
     settle(c,dt);player.x=c.x;player.z=c.z;player.y=c.y}
   else{player.a+=ix*2.6*dt;const sp=-iy*(iy<0?5:2.2);if(sp){player.walk+=dt*Math.abs(sp)*1.6;const nx=player.x+Math.cos(player.a)*sp*dt,nz=player.z+Math.sin(player.a)*sp*dt;if(free(nx,player.z,.5))player.x=nx;if(free(player.x,nz,.5))player.z=nz}settle(player,dt)}
   // npc cars: follow OSM roads, height probed on the real model round-robin
-  const npcs=cars.filter(c=>c.npc&&c.ag);if(npcs.length){rr=(rr+1)%npcs.length;const c=npcs[rr];const g=groundHit(c.x,c.z,c.y+3,8);if(g!==null)c.dy=g-modelY(c.x,c.z)}
+  const npcs=cars.filter(c=>c.npc&&c.ag);if(npcs.length&&frameN%6===0){rr=(rr+1)%npcs.length;const c=npcs[rr];const g=groundHit(c.x,c.z,c.y+3,8);if(g!==null&&Math.abs(g-c.y)<4)c.dy=g-modelY(c.x,c.z)}
   for(const c of cars){if(c.npc&&c.ag){const e=E[c.ag.e];const top=e.c===0?15:e.c===1?12:8;let blocked=false;const hx=Math.cos(c.a),hz=Math.sin(c.a);
       for(const o of[...cars,player]){if(o===c||(o===player&&player.car))continue;const dx=o.x-c.x,dz=o.z-c.z,ah=dx*hx+dz*hz;if(ah>0&&ah<12&&Math.abs(-dx*hz+dz*hx)<2.4){blocked=true;break}}
       c.v+=((blocked?0:top)-c.v)*Math.min(1,dt*(blocked?5:.8));c.ag.s+=c.v*dt;if(c.ag.s>e.len)nextEdge(c.ag);
@@ -212,7 +216,7 @@ function update(dt){
     const ca=Math.cos(c.a),sa=Math.sin(c.a);c.pitch=Math.atan2(modelY(c.x+ca*2,c.z+sa*2)-modelY(c.x-ca*2,c.z-sa*2),4);c.roll=-Math.atan2(modelY(c.x-sa,c.z+ca)-modelY(c.x+sa,c.z-ca),2)}
   if(player.car){const pc=player.car;for(const o of cars){if(o===pc)continue;const dx=o.x-pc.x,dz=o.z-pc.z,d=Math.hypot(dx,dz);if(d<4&&d>0){if(Math.abs(pc.v)>8){beep(70,.2,'triangle',.12);say('BOUM ! 💥')}pc.v*=.4;if(free(pc.x-dx/d*.6,pc.z-dz/d*.6,1.6)){pc.x-=dx/d*.6;pc.z-=dz/d*.6}}}}
   const p=pos();for(const b of bottles)if(!b.got&&Math.hypot(b.x-p.x,b.z-p.z)<4){b.got=true;b.mesh.visible=false;found++;beep(880,.12,'sine',.1);setTimeout(()=>beep(1320,.18,'sine',.1),110);say(found<bottles.length?`🍷 ${b.name} (${found}/${bottles.length})`:'🏆 Bravo ! Les 6 bouteilles sont retrouvées !')}
-  for(const b of bottles)if(!b.fixed&&!b.got&&Math.hypot(b.x-p.x,b.z-p.z)<150){const g=groundHit(b.x,b.z,b.y+40,80);if(g!==null){b.y=g;b.fixed=true}}
+  if(frameN%15===0)for(const b of bottles)if(!b.fixed&&!b.got&&Math.hypot(b.x-p.x,b.z-p.z)<150){const m=modelY(b.x,b.z);const g=groundHit(b.x,b.z,m+3,10);if(g!==null){b.y=g;b.fixed=true}}
   whereT-=dt;if(whereT<=0){whereT=.5;const r=roadAt(p.x,p.z);where=(r&&r.name?r.name:'Crans-près-Céligny')}
 }
 // ---------- render sync ----------
@@ -221,7 +225,7 @@ function sync(dt){const pm=player.mesh;pm.position.set(player.x,player.y,player.
   for(const c of cars){c.mesh.position.set(c.x,c.y,c.z);c.mesh.rotation.set(c.roll,-c.a,c.pitch)}
   for(const b of bottles){b.mesh.position.set(b.x,b.y,b.z);b.mesh.children[0].rotation.y+=dt*2}
   const e=pos(),ea=player.car?player.car.a:player.a;if(look.id===null)look.off*=1-Math.min(1,dt*1.5);camYaw+=angDiff(ea,camYaw)*Math.min(1,dt*3.2);
-  const yaw=camYaw+look.off,dist=player.car?8+Math.abs(player.car.v)*.08:5.5,h=player.car?3.4:2.6;camPos.set(e.x-Math.cos(yaw)*dist,e.y+h,e.z-Math.sin(yaw)*dist);
+  const yaw=camYaw+look.off,dist=player.car?9+Math.abs(player.car.v)*.08:7.5,h=player.car?4.2:3.8;camPos.set(e.x-Math.cos(yaw)*dist,e.y+h,e.z-Math.sin(yaw)*dist);
   if(!calibrated){camPos.set(e.x-60,e.y+80,e.z-60)}camera.position.lerp(camPos,Math.min(1,dt*(calibrated?7:2)));lookAt.set(e.x+Math.cos(yaw)*3,e.y+1.5,e.z+Math.sin(yaw)*3);camera.lookAt(lookAt)}
 // ---------- radar ----------
 const MS=.35,map=document.createElement('canvas');map.width=Math.ceil(D.hx*2*MS);map.height=Math.ceil(D.hz*2*MS);
