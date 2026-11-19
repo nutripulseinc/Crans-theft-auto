@@ -157,7 +157,11 @@ for(let ty=ty0;ty<=ty1;ty++)for(let tx=tx0;tx<=tx1;tx++){const im=new Image();im
  for(let j=0;j<nz;j++)for(let i=0;i<nx;i++){const x=GX0+i*step,z=GZ0+j*step,k=j*nx+i;pos[k*3]=x;pos[k*3+1]=hf(x,z);pos[k*3+2]=z;const t=MUV(x,z);uv[k*2]=t[0];uv[k*2+1]=t[1]}
  const idx=[];for(let j=0;j<nz-1;j++)for(let i=0;i<nx-1;i++){const a=j*nx+i,b=a+1,c=a+nx,d=c+1;idx.push(a,c,b,b,c,d)}
  TG={pos,nx,nz,step};const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(pos,3));g.setAttribute('uv',new THREE.BufferAttribute(uv,2));g.setIndex(idx);g.computeVertexNormals();
- const m=new THREE.Mesh(g,new THREE.MeshLambertMaterial({map:orthoTex}));m.receiveShadow=true;m.frustumCulled=false;scene.add(m);
+ const detailTex=canvasTex(256,(x,s2)=>{x.fillStyle='#bbb';x.fillRect(0,0,s2,s2);for(let k=0;k<9000;k++){const v=120+Math.random()*135|0;x.fillStyle=`rgb(${v},${v},${v})`;x.fillRect(Math.random()*s2,Math.random()*s2,1+Math.random()*3,1+Math.random()*3)}});
+ const tmat=new THREE.MeshLambertMaterial({map:orthoTex,color:'#d2d2d2'});
+ tmat.onBeforeCompile=sh=>{sh.uniforms.detailMap={value:detailTex};sh.vertexShader='varying vec2 vDW;\n'+sh.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\n vDW=(modelMatrix*vec4(transformed,1.0)).xz;');
+   sh.fragmentShader='uniform sampler2D detailMap;\nvarying vec2 vDW;\n'+sh.fragmentShader.replace('#include <map_fragment>','#include <map_fragment>\n diffuseColor.rgb*=mix(.8,1.12,texture2D(detailMap,vDW*.45).r)*mix(.92,1.06,texture2D(detailMap,vDW*.07).r);')};
+ const m=new THREE.Mesh(g,tmat);m.receiveShadow=true;m.frustumCulled=false;scene.add(m);
  // outer coarse terrain
  const os=LOW?200:120,R=9000,on=Math.round(R*2/os)+1;const op=new Float32Array(on*on*3);for(let j=0;j<on;j++)for(let i=0;i<on;i++){const x=-R+i*os,z=-R+j*os,k=j*on+i;const cx=clamp(x,GX0,GX0+GW),cz=clamp(z,GZ0,GZ0+GH);let y=inLake(x,z)?-3:Math.max(.3,elev(cx,cz)+ (Math.abs(x-cx)+Math.abs(z-cz))*.012);op[k*3]=x;op[k*3+1]=y-.8;op[k*3+2]=z}
  const oi=[];for(let j=0;j<on-1;j++)for(let i=0;i<on-1;i++){const a=j*on+i,b=a+1,c=a+on,d=c+1;oi.push(a,c,b,b,c,d)}
@@ -172,7 +176,7 @@ const N=D.n,E=D.e.map(([c,ids,name])=>{const f=[];for(const i of ids)f.push(N[i]
 {const bt=new Batch(),side=new Batch();
  for(const e of E)if(e.c<=2)ribbon(side,e.f,RW[e.c]+3.4,RY[e.c]-.06,C('#b9b5ad'),true);
  for(let cls=5;cls>=0;cls--)for(const e of E)if(e.c===cls)ribbon(bt,e.f,RW[cls],RY[cls],C(RCOL[cls]),true);
- const lines=new Batch();for(const e of E){if(e.c!==0)continue;for(const o of[-RW[0]/2+.35,RW[0]/2-.35])ribbon(lines,offsetLine(e.f,o),.15,RY[0]+.02,C('#f2f2f2'),false)}
+ const lines=new Batch();for(const e of E){if(e.c>1)continue;for(const o of[-RW[e.c]/2+.35,RW[e.c]/2-.35])ribbon(lines,offsetLine(e.f,o),.15,RY[0]+.02,C('#f2f2f2'),false)}
  const mat=new THREE.MeshLambertMaterial({vertexColors:true,map:asphalt,polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-2});
  const sm=side.mesh(new THREE.MeshLambertMaterial({vertexColors:true,map:asphalt,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-1}));roadLayer.add(sm);roadLayer.add(bt.mesh(mat));
  if(lines.p.length)roadLayer.add(lines.mesh(new THREE.MeshLambertMaterial({vertexColors:true,polygonOffset:true,polygonOffsetFactor:-3,polygonOffsetUnits:-3})));
@@ -190,6 +194,8 @@ const RAIL=D.rail,railCum=[0];for(let k=2;k<RAIL.length;k+=2)railCum.push(railCu
  const sl=[];for(let k=0;k+3<RAIL.length;k+=2){const ax=RAIL[k],az=RAIL[k+1],bx=RAIL[k+2],bz=RAIL[k+3],l=Math.hypot(bx-ax,bz-az);for(let s=0;s<l;s+=1.2){const x=ax+(bx-ax)*s/l,z=az+(bz-az)*s/l;sl.push([x,hf(x,z)+.42,z,Math.atan2(bz-az,bx-ax)])}}
  const im=new THREE.InstancedMesh(new THREE.BoxGeometry(.3,.1,2.4),Lm('#5b4636'),Math.max(1,sl.length));const o=new THREE.Object3D();sl.forEach((d,i)=>{o.position.set(d[0],d[1],d[2]);o.rotation.set(0,-d[3],0);o.updateMatrix();im.setMatrixAt(i,o.matrix)});im.frustumCulled=false;roadLayer.add(im)}
 
+const detailTexG=canvasTex(128,(x,s2)=>{x.fillStyle='#d8e6cf';x.fillRect(0,0,s2,s2);for(let k=0;k<2600;k++){const v=Math.random();x.fillStyle=v<.5?'rgba(20,50,15,.35)':'rgba(230,255,210,.25)';x.beginPath();x.arc(Math.random()*s2,Math.random()*s2,1+Math.random()*3,0,7);x.fill()}});
+const stoneTex=canvasTex(128,(x,s2)=>{x.fillStyle='#e9e4da';x.fillRect(0,0,s2,s2);for(let r=0;r<8;r++){let px=-(r%2)*10;while(px<s2){const w=14+Math.random()*16,v=200+Math.random()*50|0;x.fillStyle=`rgb(${v},${v-6},${v-14})`;x.fillRect(px+1,r*16+1,w-2,14);px+=w}}x.strokeStyle='rgba(90,85,75,.5)';x.lineWidth=1;for(let r=0;r<=8;r++){x.beginPath();x.moveTo(0,r*16);x.lineTo(s2,r*16);x.stroke()}});
 // ================= buildings =================
 function facade(shutter,modern){return canvasTex(256,(x,s)=>{x.fillStyle='#ffffff';x.fillRect(0,0,s,s);noise(x,s,3000,215,255);
   x.fillStyle='rgba(0,0,0,.06)';x.fillRect(0,s-14,s,14);
@@ -341,6 +347,24 @@ function roadDirAt(x,z){const l=RG.get(gk(Math.floor(x/GRID),Math.floor(z/GRID))
    else if(k==='bench'){const sb=box(1.8,.08,.45,Lm('#7a5a3a'));sb.position.y=.48;g.add(sb);const bk=box(1.8,.4,.06,Lm('#7a5a3a'));bk.position.set(0,.75,.22);g.add(bk);for(const sx of[-.75,.75]){const l=box(.08,.48,.4,Lm('#444'));l.position.set(sx,.24,0);g.add(l)}}
    else if(k==='post'){const p=box(.1,1,.1,Lm('#555'));p.position.y=.5;g.add(p);const b=box(.45,.6,.32,Lm('#ffcc00'));b.position.y=1.25;g.add(b)}
    scene.add(g)}}
+// ================= garden boundaries & roadside walls =================
+function nearestRoad(x,z,maxC){let best=null,bd=1e18;const ci=Math.floor(x/GRID),cj=Math.floor(z/GRID);for(let a=-1;a<=1;a++)for(let b=-1;b<=1;b++){const l=RG.get(gk(ci+a,cj+b));if(!l)continue;
+  for(const [ei,k] of l){const e=E[ei];if(e.c>maxC)continue;const ax=e.f[k],az=e.f[k+1],bx=e.f[k+2],bz=e.f[k+3];const dx=bx-ax,dz=bz-az,L=Math.hypot(dx,dz)||1;const t=clamp(((x-ax)*dx+(z-az)*dz)/(L*L),0,1);const px=ax+dx*t,pz=az+dz*t,d=(px-x)**2+(pz-z)**2;
+   if(d<bd){bd=d;best={e,px,pz,tx:dx/L,tz:dz/L,d:Math.sqrt(d)}}}}return best}
+{const hedge=[],wall=[],fence=[],retain=[];const HC=['#2f5a28','#3a6b2c','#2b4f2a','#466f33'],SC=['#b8afa0','#a49b8c','#c4baa8'];
+ for(const b of B){if(b.h>9||b.top-b.h<-50)continue;const f=b.f,n=f.length/2;let cx=0,cz=0;for(let k=0;k<n;k++){cx+=f[k*2];cz+=f[k*2+1]}cx/=n;cz/=n;
+   const r=nearestRoad(cx,cz,3);if(!r||r.d>32||r.d<4)continue;let nx=cx-r.px,nz=cz-r.pz;const nl=Math.hypot(nx,nz)||1;nx/=nl;nz/=nl;
+   const off=RW[r.e.c]/2+(r.e.c<=2?2.1:.8);let smin=1e9,smax=-1e9;for(let k=0;k<n;k++){const s2=(f[k*2]-r.px)*r.tx+(f[k*2+1]-r.pz)*r.tz;smin=Math.min(smin,s2);smax=Math.max(smax,s2)}
+   smin-=3+rnd()*3;smax+=3+rnd()*3;const gate=((cx-r.px)*r.tx+(cz-r.pz)*r.tz)+(rnd()-.5)*4;const kind=rnd();const col=kind<.62?HC[Math.floor(rnd()*HC.length)]:SC[Math.floor(rnd()*SC.length)];
+   const hh=kind<.62?1.5+rnd()*.7:.8+rnd()*.4;
+   for(let s2=smin;s2<smax;s2+=2){if(Math.abs(s2+1-gate)<2.2)continue;const x=r.px+r.tx*(s2+1)+nx*off,z=r.pz+r.tz*(s2+1)+nz*off;if(roadAt(x,z)||hitB(x,z,.6)||inLake(x,z))continue;
+     const it=[x,hf(x,z),z,Math.atan2(r.tz,r.tx),2.05,hh,col];if(kind<.62)hedge.push(it);else{wall.push(it);if(kind>.85)fence.push([x,it[1]+hh,z,it[3],2.05,.9,'#3d4247'])}}}
+ for(const e of E){if(e.c>2)continue;for(let s2=2;s2<e.len-2;s2+=3){const p=at(e,true,s2);const y0=hf(p.x,p.z);for(const sd of[-1,1]){const o=RW[e.c]/2+(e.c<=2?1.75:.3);const ox=-p.tz*sd,oz=p.tx*sd;
+     const up=hf(p.x+ox*(o+4),p.z+oz*(o+4))-y0;if(up>.9){const x=p.x+ox*o,z=p.z+oz*o;if(hitB(x,z,.4))continue;retain.push([x,y0-.2,z,Math.atan2(p.tz,p.tx),3.1,Math.min(3.2,up+.3),'#a9a192'])}}}}
+ const o=new THREE.Object3D();
+ const put=(list,depth,mat)=>{if(!list.length)return;const im=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1).translate(0,.5,0),mat,list.length);list.forEach((d,i)=>{o.position.set(d[0],d[1]-.15,d[2]);o.rotation.set(0,-d[3],0);o.scale.set(d[4],d[5]+.15,depth);o.updateMatrix();im.setMatrixAt(i,o.matrix);im.setColorAt(i,C(d[6]))});
+   im.instanceColor.needsUpdate=true;im.castShadow=true;im.receiveShadow=true;im.frustumCulled=false;scene.add(im)};
+ put(hedge,1.0,new THREE.MeshLambertMaterial({color:'#ffffff',map:detailTexG}));put(wall,.45,new THREE.MeshLambertMaterial({color:'#ffffff',map:stoneTex}));put(fence,.06,Lm('#ffffff'));put(retain,.5,new THREE.MeshLambertMaterial({color:'#ffffff',map:stoneTex}));}
 // ================= graph =================
 const adj=new Map();E.forEach((e,i)=>{const a=e.ids[0],b=e.ids[e.ids.length-1];for(const [n,fw] of[[a,true],[b,false]]){if(!adj.has(n))adj.set(n,[]);adj.get(n).push({e:i,fw})}});
 function at(e,fw,s){s=clamp(s,0,e.len);const d=fw?s:e.len-s;let k=0;while(k<e.cum.length-2&&e.cum[k+1]<d)k++;const seg=e.cum[k+1]-e.cum[k]||1;const t=(d-e.cum[k])/seg;
@@ -516,7 +540,7 @@ function drawUI(){u.setTransform(UDPR,0,0,UDPR,0,0);u.clearRect(0,0,W,H);
 }
 
 let last=performance.now(),playing=false;
-let orthoT=0;function frame(t){const dt=Math.min(.05,Math.max(0,(t-last)/1000));last=t;time+=dt;orthoT-=dt;if(orthoDirty&&orthoT<=0){orthoT=.6;orthoDirty=false;orthoTex.needsUpdate=true;if(orthoOK>orthoTotal*.85)roadLayer.visible=false}if(playing)update(dt);sync(dt);renderer.render(scene,camera);if(playing)drawUI();requestAnimationFrame(frame)}
+let orthoT=0;function frame(t){const dt=Math.min(.05,Math.max(0,(t-last)/1000));last=t;time+=dt;orthoT-=dt;if(orthoDirty&&orthoT<=0){orthoT=.6;orthoDirty=false;orthoTex.needsUpdate=true;}if(playing)update(dt);sync(dt);renderer.render(scene,camera);if(playing)drawUI();requestAnimationFrame(frame)}
 camera.position.set(player.x-8,hf(player.x,player.z)+6,player.z-8);
 requestAnimationFrame(frame);
 const go=document.getElementById('go');go.disabled=false;go.textContent='JOUER';
