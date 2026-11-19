@@ -123,8 +123,10 @@ function nearestNode(x,z,maxC=5){let best=0,bd=1e18;for(const e of E){if(e.c>max
 const POI=D.poi.filter(p=>Math.abs(p[1])<D.hx&&Math.abs(p[2])<D.hz);const poi=n=>{const p=POI.find(q=>q[0]===n);return p?[p[1],p[2]]:null};
 
 // ---------- ground via raycast on the real 3D model ----------
-const ray=new THREE.Raycaster();ray.firstHitOnly=true;const DOWN=new THREE.Vector3(0,-1,0),tmpV=new THREE.Vector3();
-function groundHit(x,z,fromY,depth=60){tmpV.set(x,fromY,z);ray.set(tmpV,DOWN);ray.far=depth;const h=ray.intersectObject(tiles.group,true);return h.length?h[0].point.y:null}
+const ray=new THREE.Raycaster();ray.firstHitOnly=false;const DOWN=new THREE.Vector3(0,-1,0),tmpV=new THREE.Vector3();
+function groundHit(x,z,fromY,depth=60,near=null){tmpV.set(x,fromY,z);ray.set(tmpV,DOWN);ray.far=depth;const h=ray.intersectObject(tiles.group,true);if(!h.length)return null;
+  if(near===null)return h[0].point.y;let best=null,bd=1e9;for(const it of h){const d=Math.abs(it.point.y-near);if(d<bd){bd=d;best=it.point.y}}return best}
+function refineGeo(x,z){const m=modelY(x,z);if(inLake(x,z))return null;const g=groundHit(x,z,m+40,90,m);if(g===null)return null;const est=g-elevAbs(x,z);if(Math.abs(est-49.6)<10){GEO+=(est-GEO)*.08;return g}return null}
 
 // ---------- entities ----------
 const Lm=c=>new THREE.MeshLambertMaterial({color:c});
@@ -176,12 +178,15 @@ const angDiff=(a,b)=>((a-b+Math.PI*3)%(Math.PI*2))-Math.PI;
 
 // ---------- update ----------
 let calibrated=false,rr=0,whereT=0,where='';
-function settle(o,dt,probe){ // vertical position on the real model
-  const g=groundHit(o.x,o.z,o.y+2.2,8);
-  if(g!==null){if(g>o.y-.05||o.grounded){o.y+=(g-o.y)*Math.min(1,dt*(g>o.y?18:12));o.grounded=true;o.vy=0}}
-  else{const m=modelY(o.x,o.z);if(o.y>m+.3){o.vy-=9.8*dt;o.y+=o.vy*dt;o.grounded=false;if(o.y<m){o.y=m;o.vy=0}}else{o.y+=(m-o.y)*Math.min(1,dt*4)}}}
+function settle(o,dt){ // vertical position on the real model
+  const g=groundHit(o.x,o.z,o.y+1.2,6,o.y);
+  if(g!==null&&g<=o.y+1.2){if(g>=o.y-.08){o.y+=(g-o.y)*Math.min(1,dt*20);o.vy=0;o.grounded=true}else{o.vy-=9.8*dt;o.y=Math.max(g,o.y+o.vy*dt);if(o.y===g){o.vy=0;o.grounded=true}}}
+  else{const m=modelY(o.x,o.z);if(o.y>m+.2){o.vy-=9.8*dt;o.y+=o.vy*dt;if(o.y<m){o.y=m;o.vy=0}}else{o.y+=(m-o.y)*Math.min(1,dt*6);o.vy=0}}
+  if(o.y>modelY(o.x,o.z)+25){o.y=modelY(o.x,o.z);o.vy=0}}
+let geoT=0;
 function update(dt){
-  if(!calibrated){const g=groundHit(player.x,player.z,modelY(player.x,player.z)+150,400);if(g!==null){GEO+=g-modelY(player.x,player.z);player.y=g;calibrated=true;for(const c of cars)c.y=modelY(c.x,c.z);for(const b of bottles)b.y=modelY(b.x,b.z);document.getElementById('load').style.display='none';say('Bienvenue à Crans ! 🇨🇭')}else return}
+  if(!calibrated){let ok=null;for(let k=0;k<4;k++)ok=refineGeo(player.x,player.z)??ok;if(ok!==null){player.y=ok;player.grounded=true;calibrated=true;for(const c of cars)c.y=modelY(c.x,c.z);for(const b of bottles)b.y=modelY(b.x,b.z);document.getElementById('load').style.display='none';say('Bienvenue à Crans ! 🇨🇭')}else return}
+  geoT-=dt;if(geoT<=0){geoT=.25;const p=pos();refineGeo(p.x+(Math.random()-.5)*30,p.z+(Math.random()-.5)*30)}
   const [ix,iy]=input();
   if(player.car){const c=player.car,thr=-iy;if(thr>0)c.v+=(c.v<0?16:7)*thr*dt;else if(thr<0)c.v+=(c.v>0?16:5)*thr*dt;else c.v*=1-.9*dt;
     const max=roadAt(c.x,c.z)?33:13;if(c.v>max)c.v-=Math.min(c.v-max,10*dt);c.v=Math.max(c.v,-6);c.a+=ix*1.6*dt*clamp(c.v/5,-1,1);
