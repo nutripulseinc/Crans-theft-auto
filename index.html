@@ -122,8 +122,8 @@ function noise(x,s,n,a,b){for(let i=0;i<n;i++){const v=a+Math.random()*(b-a);x.f
 // ================= renderer & sky =================
 let renderer;try{renderer=new THREE.WebGLRenderer({antialias:!LOW,powerPreference:'high-performance'})}catch(e){throw new Error('La 3D (WebGL) n\'est pas disponible sur cet appareil')}
 renderer.domElement.id='gl';document.body.prepend(renderer.domElement);
-renderer.setPixelRatio(LOW?1:Math.min(window.devicePixelRatio||1,1.5));renderer.domElement.addEventListener('webglcontextlost',ev=>{ev.preventDefault();showErr('La carte graphique du téléphone a décroché. Ferme d\'autres applis puis rouvre le jeu.')});renderer.setSize(W,H);
-renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+renderer.setPixelRatio(LOW?1:Math.min(window.devicePixelRatio||1,1.5));renderer.domElement.addEventListener('webglcontextlost',ev=>{ev.preventDefault();showErr('La carte graphique du téléphone a décroché. Ferme les vidéos et autres applis, puis touche ici pour relancer.');document.getElementById('err').onclick=()=>location.reload()});renderer.setSize(W,H);
+renderer.shadowMap.enabled=!LOW;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
 const scene=new THREE.Scene();scene.background=C('#9fcff0');scene.fog=new THREE.Fog('#c3dff2',300,2200);
 const camera=new THREE.PerspectiveCamera(50,W/H,0.5,80000);
 {const g=new THREE.SphereGeometry(50000,24,12);const cols=[];const pos=g.attributes.position;for(let i=0;i<pos.count;i++){const y=pos.getY(i)/50000;const c=C('#c9e3f5').lerp(C('#4f8fd6'),clamp(y*1.6,0,1));cols.push(c.r,c.g,c.b)}
@@ -137,7 +137,7 @@ const Lm=(c,o={})=>new THREE.MeshLambertMaterial(Object.assign({color:c},o));
 function box(w,h,d,mat){const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);m.castShadow=true;m.receiveShadow=true;return m}
 
 // ================= ground texture (painted from the real map) =================
-const GX0=-1400,GZ0=-1200,GW=2800,GH=2400,GS=2048;
+const GX0=-1400,GZ0=-1200,GW=2800,GH=2400,GS=LOW?1024:2048;
 const gp=(x,z)=>[(x-GX0)/GW*GS,(z-GZ0)/GH*GS];
 const groundTex=canvasTex(GS,(x,s)=>{
   x.fillStyle='#7ea657';x.fillRect(0,0,s,s);
@@ -156,7 +156,7 @@ const groundTex=canvasTex(GS,(x,s)=>{
 
 // ================= swisstopo aerial photo (SWISSIMAGE) =================
 const LAT0=46.35526,LON0=6.211035,KXo=111320*Math.cos(LAT0*Math.PI/180),KZo=110574;
-const OZ=LOW?16:17,NTo=2**OZ;
+const OZ=LOW?15:17,NTo=2**OZ;
 const mxo=lon=>(lon+180)/360*NTo*256,myo=lat=>{const r=lat*Math.PI/180;return(1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*NTo*256};
 const PX0=mxo(LON0+GX0/KXo),PX1=mxo(LON0+(GX0+GW)/KXo),PY0=myo(LAT0-GZ0/KZo),PY1=myo(LAT0-(GZ0+GH)/KZo);
 const tx0=Math.floor(PX0/256),tx1=Math.floor(PX1/256),ty0=Math.floor(PY0/256),ty1=Math.floor(PY1/256);
@@ -466,13 +466,13 @@ const player={x:0,z:0,a:0,car:null,walk:0};player.mesh=makePerson('#ff7a1a','#9a
 {const t=poi('Temple de Crans')||[0,0];const n=N[nearestNode(t[0],t[1],2)];player.x=n[0];player.z=n[1];for(let r=0;r<20&&!free(player.x,player.z,.6);r++){player.x+=1.5;player.z+=1}}
 const cars=[];
 function mkCar(x,z,a,npc,col){const c={x,z,a,v:0,npc,col:col||carCols[Math.floor(Math.random()*carCols.length)],pitch:0,roll:0};c.mesh=makeCarMesh(c.col);cars.push(c);return c}
-{const res=E.filter(e=>e.c===2&&e.len>40);for(let i=0;i<40&&res.length;i++){const e=res[Math.floor(rnd()*res.length)];const p=at(e,true,e.len*(.2+rnd()*.6));const side=rnd()<.5?1:-1;const x=p.x-p.tz*side*(RW[2]/2+.4),z=p.z+p.tx*side*(RW[2]/2+.4);if(free(x,z,1.6))mkCar(x,z,Math.atan2(p.tz,p.tx),false)}
+{const res=E.filter(e=>e.c===2&&e.len>40);for(let i=0;i<(LOW?12:40)&&res.length;i++){const e=res[Math.floor(rnd()*res.length)];const p=at(e,true,e.len*(.2+rnd()*.6));const side=rnd()<.5?1:-1;const x=p.x-p.tz*side*(RW[2]/2+.4),z=p.z+p.tx*side*(RW[2]/2+.4);if(free(x,z,1.6))mkCar(x,z,Math.atan2(p.tz,p.tx),false)}
  let best=null,bd=1e9;for(const c of cars){const d=Math.hypot(c.x-player.x,c.z-player.z);if(d<bd){bd=d;best=c}}
  if(!best||bd>40){const e=E.find(e=>e.c<=2&&e.ids.includes(nearestNode(player.x,player.z,2)));if(e){const p=at(e,true,Math.min(8,e.len/2));const x=p.x-p.tz*2.3,z=p.z+p.tx*2.3;if(free(x,z,1.6))mkCar(x,z,Math.atan2(p.tz,p.tx),false,'#c1121f')}}}
 const driveEdges=E.map((e,i)=>i).filter(i=>E[i].c<=2&&E[i].len>15);
-for(let i=0;i<(LOW?34:50)&&driveEdges.length;i++){const ei=driveEdges[Math.floor(rnd()*driveEdges.length)];const c=mkCar(0,0,0,true);c.ag={e:ei,fw:rnd()<.5,s:rnd()*E[ei].len};c.v=8}
+for(let i=0;i<(LOW?14:50)&&driveEdges.length;i++){const ei=driveEdges[Math.floor(rnd()*driveEdges.length)];const c=mkCar(0,0,0,true);c.ag={e:ei,fw:rnd()<.5,s:rnd()*E[ei].len};c.v=8}
 const walkEdges=E.map((e,i)=>i).filter(i=>E[i].c>=1&&E[i].len>10);
-const peds=[];for(let i=0;i<40&&walkEdges.length;i++){const ei=walkEdges[Math.floor(rnd()*walkEdges.length)];const q={ag:{e:ei,fw:rnd()<.5,s:rnd()*E[ei].len},side:rnd()<.5?1:-1,jump:0,flee:0,walk:0,x:0,z:0,a:0};
+const peds=[];for(let i=0;i<(LOW?22:40)&&walkEdges.length;i++){const ei=walkEdges[Math.floor(rnd()*walkEdges.length)];const q={ag:{e:ei,fw:rnd()<.5,s:rnd()*E[ei].len},side:rnd()<.5?1:-1,jump:0,flee:0,walk:0,x:0,z:0,a:0};
   q.mesh=makePerson(shirts[Math.floor(rnd()*shirts.length)],['#3b2a1a','#111','#c9a15a','#7a3b1d','#999'][i%5]);peds.push(q)}
 const boats=[];
 function mkBoat(x,z,a,sail){const g=new THREE.Group();const hull=box(6,1,2.3,Lm('#ffffff'));hull.position.y=.35;g.add(hull);const cab=box(2.2,1,1.7,Lm(rnd()<.5?'#2b6cb0':'#d1d5db'));cab.position.set(-.6,1.3,0);g.add(cab);
@@ -594,7 +594,7 @@ function trackStep(c,dist){const ca=Math.cos(c.a),sa=Math.sin(c.a);for(let k=0;k
   trkGeo.attributes.position.needsUpdate=true;trkGeo.setDrawRange(0,Math.min(trkI,TRK)*6)}
 // --- les Michou : petites voitures blanches très lentes
 function michouGrumble(c){say('🧓 Michou : « C\'est pas correct ! »');const m=makePerson('#d8d8d8','#eeeeee');m.position.set(c.x-Math.sin(c.a)*2.5,groundY(c.x,c.z),c.z+Math.cos(c.a)*2.5);const t=nameTag('Michou : « C\'est pas correct ! »','#ffffff',1.3);t.position.set(0,2.8,0);m.add(t);setTimeout(()=>{scene.remove(m)},15000)}
-for(let k=0;k<5;k++){const ei=driveEdges[Math.floor(rnd()*driveEdges.length)];const c=mkCar(0,0,0,true,'#fbfbfb');c.isMichou=true;c.ag={e:ei,fw:rnd()<.5,s:rnd()*E[ei].len};c.v=3;const t=nameTag('Michou 🐌','#ffffff',1.4);t.position.set(0,3.4,0);c.mesh.add(t)}
+for(let k=0;k<(LOW?3:5);k++){const ei=driveEdges[Math.floor(rnd()*driveEdges.length)];const c=mkCar(0,0,0,true,'#fbfbfb');c.isMichou=true;c.ag={e:ei,fw:rnd()<.5,s:rnd()*E[ei].len};c.v=3;const t=nameTag('Michou 🐌','#ffffff',1.4);t.position.set(0,3.4,0);c.mesh.add(t)}
 // --- saucisses aux choux : ça dessoûle
 const saucisses=[];
 {const sm=Lm('#a5552f'),cm=Lm('#6fae3f'),rg=new THREE.MeshBasicMaterial({color:'#9cff57',transparent:true,opacity:.55,side:THREE.DoubleSide});
